@@ -1,0 +1,74 @@
+[
+  {
+    "id": "TC1",
+    "ac": "AC1",
+    "text": "Given valid placeholder credential headers, When the agent calls initialize then tools/list, Then all 17 watchguard_* tools are returned with the documented names, and tools/call watchguard_get_account (mocked 200) returns the account payload, not an error envelope",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_tools_list_returns_full_catalog", "tests/test_tools.py::test_get_account_success_returns_payload"]
+  },
+  {
+    "id": "TC2",
+    "ac": "AC2",
+    "text": "Given no accountId argument and no X-WatchGuard-Account-Id header, When watchguard_get_account is called, Then it resolves to the credential owner's own account and never substitutes any other account id",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_get_account_defaults_to_credential_owner_account"]
+  },
+  {
+    "id": "TC3",
+    "ac": "AC3",
+    "text": "Given any one of X-WatchGuard-Access-Id / X-WatchGuard-Password / X-WatchGuard-Api-Key is missing, When any watchguard_* tool is called, Then the server returns HTTP 401 whose body names exactly the header that was omitted, with no fallback to environment variables",
+    "type": "auto",
+    "tests": ["tests/test_middleware.py::test_missing_access_id_returns_401_naming_header", "tests/test_middleware.py::test_missing_password_returns_401_naming_header", "tests/test_middleware.py::test_missing_api_key_returns_401_naming_header"]
+  },
+  {
+    "id": "TC4",
+    "ac": "AC4",
+    "text": "Given X-WatchGuard-Account-Id is set to a managed account id, When a tool is called, Then the client calls POST /v1/audiences before POST /oauth/token, and the resulting token request includes the returned audience value",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_managed_account_id_resolves_audience_before_token"]
+  },
+  {
+    "id": "TC5",
+    "ac": "AC5",
+    "text": "Given mocked vendor responses of 404 / 429 / 500, When a tool call hits each, Then the result is the structured envelope with code not_found / rate_limited / upstream_error respectively, and 429/500 are retried at least once (honoring Retry-After on 429) before the final envelope is returned",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_404_maps_to_not_found_envelope", "tests/test_tools.py::test_429_retries_then_maps_to_rate_limited_envelope", "tests/test_tools.py::test_500_retries_then_maps_to_upstream_error_envelope"]
+  },
+  {
+    "id": "TC6",
+    "ac": "AC6",
+    "text": "Given watchguard_delete_account or watchguard_delete_operator is called without the required id argument, When invoked, Then it is rejected with an invalid_argument envelope (no wildcard/all form exists), and both tools' schema marks destructiveHint true",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_delete_account_requires_account_id", "tests/test_tools.py::test_delete_operator_requires_identifiers", "tests/test_tools.py::test_delete_tools_are_marked_destructive"]
+  },
+  {
+    "id": "TC7",
+    "ac": "AC7",
+    "text": "Given a mocked operator create response carrying a transaction_id, When the tool returns, Then the result includes that transaction_id, and watchguard_get_operator_transaction_status called with it returns the mocked final status",
+    "type": "auto",
+    "tests": ["tests/test_tools.py::test_create_operator_returns_transaction_id", "tests/test_tools.py::test_transaction_status_tool_returns_final_state"]
+  },
+  {
+    "id": "TC8",
+    "ac": "AC8",
+    "text": "Given two concurrent requests carrying different X-WatchGuard-* credentials, When their tool calls interleave, Then neither request ever reads the other's ContextVar-held credentials, and there is no module-level or global cache of tokens or account data",
+    "type": "auto",
+    "tests": ["tests/test_middleware.py::test_concurrent_requests_do_not_share_context_var"]
+  },
+  {
+    "id": "TC9",
+    "ac": "AC9",
+    "text": "Given a real WatchGuard Cloud account, When live calls are made to watchguard_get_account, watchguard_activate_device, and watchguard_create_operator, Then each returns live vendor data matching the documented response shapes",
+    "type": "manual",
+    "steps": [
+      "Obtain a real WatchGuard Cloud account's Access Id, Password, and Api Key (Manage Access page)",
+      "Set X-WatchGuard-Access-Id / X-WatchGuard-Password / X-WatchGuard-Api-Key on the request",
+      "Call watchguard_get_account with no accountId argument",
+      "Call watchguard_activate_device with a real activation key (only against a vendor test/trial account, never assumed to exist)",
+      "Call watchguard_create_operator with a disposable test operator"
+    ],
+    "expect": "Each call returns a 200-shaped tool result matching the documented WatchGuard response fields, not an error envelope",
+    "result": "blocked",
+    "evidence": "No WatchGuard Cloud test/trial account is available to this pipeline; not a blocker for publishing to INT per SOP 'no test account is not a blocker' and mcp-track.md section 3 completion criteria. Listed in the dev report as 'needs a real vendor account'."
+  }
+]
