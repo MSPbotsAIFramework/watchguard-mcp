@@ -37,3 +37,36 @@ Verdict: changes requested
    - **Scope decision**: SOP §6 also lists "入参摘要（脱敏）" (sanitized arg summary) as a thing to log; this fix does not add one. The review finding's own restatement of what's required (request-id, tool name, API path/status, latency, error code) does not include it, and account ids / usernames passed as tool args are themselves tenant-identifying, so omitting a generic arg dump avoids re-introducing a smaller version of the same leakage risk §6 warns against. If a specific arg needs to be traceable, that's a follow-up, not implied by this must-fix.
    - **Verified end-to-end** (not just unit tests): `scratch/PRD-21249/log_smoke.py` (kept in the pipeline skill's scratch dir, not this repo) drives a real `tools/call` through `fastmcp.Client` against a mocked WatchGuard API (success path and a 404 error path). Captured log lines show a single `request_id` shared across the `vendor_call` lines (`/v1/audiences`, `/oauth/token`, `/v2/accounts/...`) and the closing `tool_call` line, with `tool`, `status`, `latency_ms`, and (on the error path) `error_code: not_found` all present, and no header/credential values anywhere in the output.
    - **Full gate re-run on the fixed code** (same commands as round 1's self-test): `uv sync && uv run pytest` → 18 passed, 0 failed (unchanged — this fix adds no new behavior to any tool's input/output contract, so no existing test needed to change and none of TC1–TC8 required re-execution beyond this same pytest run). CJK scan (`grep -rnP '[\x{4e00}-\x{9fff}]' --exclude-dir=.git --exclude-dir=.venv .`): clean in `src/` and in the new/changed files; the scan also still matches the two quoted Chinese SOP section titles inside *this file's own Round 1 text above* (lines pre-dating this fix, written by the reviewer, not touched here — out of scope for this must-fix). `gitleaks detect --no-banner -s .`: `no leaks found` (5 commits scanned). README "MSPbots Connector" section vs `vendor-mcp-development/reference/readme-connector-section.md`: byte-identical (unchanged by this fix). `docker build --platform linux/amd64`: succeeds. Container smoke test: `GET /health` → 200, `POST /mcp` with no credential headers → 401, `docker exec whoami` → `app` (non-root) — all unchanged from round 1.
+
+## Round 2 · 2026-11-02 · reviewed dev/PRD-21249 @ efc944b (base main @ e8caef0)
+
+Verdict: approved
+
+### Scope
+
+`git diff 2ea0897...efc944b` — the round 1 fix only: new `src/watchguard_mcp/logging_utils.py`; `context.py` gains a `request_id` `ContextVar`; `client.py` `_send_raw` and `tools/_common.py` `run_tool` emit the two log events; all 17 `run_tool(...)` call sites across `tools/{accounts,activations,allocations,operators}.py` updated to the new `run_tool(tool_name, body)` signature. No change to `tests/`, `docs/tickets/PRD-21249.ac.json`, or the frozen `docs/tickets/PRD-21249.md` — correct, since this is a pure logging/observability fix that doesn't touch any AC-facing behavior or tool contract.
+
+### Verification performed (independently re-run, not just re-reading the Fixes note)
+
+- `uv sync && uv run pytest -q`: 18 passed, 0 failed.
+- CJK scan: clean in `src/`; the only hits anywhere in the tree are the quoted Chinese SOP section titles inside this review file's own Round 1 prose above (pre-existing, not code).
+- `grep -rn "run_tool(" src/` minus the `def`: all 17 call sites pass a `tool_name` string as the first argument; none left on the old one-arg signature.
+- `src/watchguard_mcp/errors.py`: confirmed `WatchguardError.code` is a real attribute, so `exc.code` used in the new `tool_call` error log is correct.
+- README "MSPbots Connector" section vs `vendor-mcp-development/reference/readme-connector-section.md`: byte-identical (diffed programmatically).
+- `docker build --platform linux/amd64 -t watchguard-mcp:review-r2 .`: succeeds.
+- **Live container smoke test, run myself end-to-end** (not the dev's `scratch/` script): started the built image; `GET /health` → 200; `POST /mcp` with no credential headers → 401; `docker exec whoami` → `app`; then called `initialize` and `tools/call watchguard_get_account` with placeholder credential headers (no real vendor account, so the outbound call 400s against the real WatchGuard OAuth endpoint — expected). `docker logs` showed exactly the two claimed structured JSON lines:
+  ```
+  {"event":"vendor_call","request_id":"005b60e0a2cd","method":"POST","path":"/oauth/token","attempt":1,"status_code":400,"latency_ms":418.8}
+  {"event":"tool_call","request_id":"005b60e0a2cd","tool":"watchguard_get_account","status":"error","error_code":"invalid_argument","latency_ms":529.2}
+  ```
+  Same `request_id` on both lines, no credential/token values anywhere in the output. This independently confirms the round 1 must-fix is genuinely fixed, not just claimed.
+
+### Findings
+
+None. Round 1's must-fix is resolved; no new must-fix found in this round's diff.
+
+### Suggestions carried over (unchanged, still not blocking)
+
+1. `src/watchguard_mcp/tools/_common.py:29` (`to_json`) — list tools still return the vendor's response payload verbatim rather than trimming to documented fields (SOP §2, should-level). Unchanged by this fix; same rationale as round 1 (exact vendor response shape unconfirmed without a live account). Worth revisiting once TC9 is validated.
+
+Status: frozen @ efc944b
