@@ -4,56 +4,72 @@
     "ac": "AC1",
     "text": "Given valid placeholder credential headers, When the agent calls initialize then tools/list, Then all 17 watchguard_* tools are returned with the documented names, and tools/call watchguard_get_account (mocked 200) returns the account payload, not an error envelope",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_tools_list_returns_full_catalog", "tests/test_tools.py::test_get_account_success_returns_payload"]
+    "tests": ["tests/test_tools.py::test_tools_list_returns_full_catalog", "tests/test_tools.py::test_get_account_success_returns_payload"],
+    "result": "pass",
+    "evidence": "pytest -v: test_tools_list_returns_full_catalog PASSED (asserts 17 tool names == full catalog); test_get_account_success_returns_payload PASSED (respx-mocked 200, result.data == {\"accountId\":\"WGC-1-000000\",\"name\":\"Acme MSP\"}, no error key). Also verified live over HTTP: started `python -m watchguard_mcp` and curled initialize+tools/list with placeholder headers -- HTTP 200, 17 watchguard_* tools returned (no Mcp-Session-Id sent, confirming stateless per SOP SS1.3). Full suite: 18 passed, 0 failed."
   },
   {
     "id": "TC2",
     "ac": "AC2",
     "text": "Given no accountId argument and no X-WatchGuard-Account-Id header, When watchguard_get_account is called, Then it resolves to the credential owner's own account and never substitutes any other account id",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_get_account_defaults_to_credential_owner_account"]
+    "tests": ["tests/test_tools.py::test_get_account_defaults_to_credential_owner_account"],
+    "result": "pass",
+    "evidence": "pytest -v: test_get_account_defaults_to_credential_owner_account PASSED. Mocked /oauth/token returns a token carrying claim account_id=WGC-1-OWNER; GET /v2/accounts/WGC-1-OWNER mocked 200 and asserted called exactly once; result.data matches that payload; and /v1/audiences route asserted call_count == 0 (never called, so no other account's audience/id is ever substituted). Implementation note: this relies on the WatchGuard token response carrying an account identifier claim (tech design Decision 6) -- unconfirmed against a live account, flagged as 'needs a real vendor account' like TC9."
   },
   {
     "id": "TC3",
     "ac": "AC3",
     "text": "Given any one of X-WatchGuard-Access-Id / X-WatchGuard-Password / X-WatchGuard-Api-Key is missing, When any watchguard_* tool is called, Then the server returns HTTP 401 whose body names exactly the header that was omitted, with no fallback to environment variables",
     "type": "auto",
-    "tests": ["tests/test_middleware.py::test_missing_access_id_returns_401_naming_header", "tests/test_middleware.py::test_missing_password_returns_401_naming_header", "tests/test_middleware.py::test_missing_api_key_returns_401_naming_header"]
+    "tests": ["tests/test_middleware.py::test_missing_access_id_returns_401_naming_header", "tests/test_middleware.py::test_missing_password_returns_401_naming_header", "tests/test_middleware.py::test_missing_api_key_returns_401_naming_header"],
+    "result": "pass",
+    "evidence": "pytest -v: all three PASSED, each asserting resp.status_code == 401 and missing_headers == [exactly the one omitted header]. Also verified live: curl POST /mcp with no WatchGuard headers at all returned HTTP 401 with body {\"error\":\"missing required header(s)\",\"missing_headers\":[\"X-WatchGuard-Access-Id\",\"X-WatchGuard-Password\",\"X-WatchGuard-Api-Key\"]} (both local run and the built linux/amd64 container)."
   },
   {
     "id": "TC4",
     "ac": "AC4",
     "text": "Given X-WatchGuard-Account-Id is set to a managed account id, When a tool is called, Then the client calls POST /v1/audiences before POST /oauth/token, and the resulting token request includes the returned audience value",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_managed_account_id_resolves_audience_before_token"]
+    "tests": ["tests/test_tools.py::test_managed_account_id_resolves_audience_before_token"],
+    "result": "pass",
+    "evidence": "pytest -v: test_managed_account_id_resolves_audience_before_token PASSED. Asserts audience_route.call_count==1, token_route.call_count==1, token request body contains 'audience=aud-xyz', and the recorded call order has /v1/audiences before /oauth/token."
   },
   {
     "id": "TC5",
     "ac": "AC5",
     "text": "Given mocked vendor responses of 404 / 429 / 500, When a tool call hits each, Then the result is the structured envelope with code not_found / rate_limited / upstream_error respectively, and 429/500 are retried at least once (honoring Retry-After on 429) before the final envelope is returned",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_404_maps_to_not_found_envelope", "tests/test_tools.py::test_429_retries_then_maps_to_rate_limited_envelope", "tests/test_tools.py::test_500_retries_then_maps_to_upstream_error_envelope"]
+    "tests": ["tests/test_tools.py::test_vendor_error_maps_to_structured_envelope[404-not_found]", "tests/test_tools.py::test_vendor_error_maps_to_structured_envelope[429-rate_limited]", "tests/test_tools.py::test_vendor_error_maps_to_structured_envelope[500-upstream_error]", "tests/test_tools.py::test_retry_delay_honors_retry_after_header"],
+    "result": "pass",
+    "evidence": "pytest -v: all three parametrized cases PASSED (envelope code matches; 429/500 assert account_route.call_count >= 2, i.e. retried). test_retry_delay_honors_retry_after_header PASSED, asserting WatchguardClient._retry_delay reads the Retry-After header value (7.0s) directly rather than falling back to the exponential default. Real sleeping is skipped in tests via the fast_backoff fixture (monkeypatches the _backoff_sleep indirection), so the retry *logic* is exercised without slowing the suite; the real 1s/2s backoff schedule runs unmodified outside tests."
   },
   {
     "id": "TC6",
     "ac": "AC6",
     "text": "Given watchguard_delete_account or watchguard_delete_operator is called without the required id argument, When invoked, Then it is rejected with an invalid_argument envelope (no wildcard/all form exists), and both tools' schema marks destructiveHint true",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_delete_account_requires_account_id", "tests/test_tools.py::test_delete_operator_requires_identifiers", "tests/test_tools.py::test_delete_tools_are_marked_destructive"]
+    "tests": ["tests/test_tools.py::test_delete_account_requires_account_id", "tests/test_tools.py::test_delete_operator_requires_identifiers", "tests/test_tools.py::test_delete_tools_are_marked_destructive"],
+    "result": "pass",
+    "evidence": "pytest -v: all three PASSED. test_delete_account_requires_account_id / test_delete_operator_requires_identifiers call with an empty-string id and assert the returned envelope's error.code == 'invalid_argument'. test_delete_tools_are_marked_destructive lists tools via the in-memory Client and asserts annotations.destructiveHint is True for both watchguard_delete_account and watchguard_delete_operator."
   },
   {
     "id": "TC7",
     "ac": "AC7",
     "text": "Given a mocked operator create response carrying a transaction_id, When the tool returns, Then the result includes that transaction_id, and watchguard_get_operator_transaction_status called with it returns the mocked final status",
     "type": "auto",
-    "tests": ["tests/test_tools.py::test_create_operator_returns_transaction_id", "tests/test_tools.py::test_transaction_status_tool_returns_final_state"]
+    "tests": ["tests/test_tools.py::test_create_operator_returns_transaction_id", "tests/test_tools.py::test_transaction_status_tool_returns_final_state"],
+    "result": "pass",
+    "evidence": "pytest -v: both PASSED. test_create_operator_returns_transaction_id asserts result.data parses to a payload containing transaction_id == 'txn-123'. test_transaction_status_tool_returns_final_state asserts the polling tool's result matches the mocked {\"transaction_id\":\"txn-123\",\"status\":\"completed\"}."
   },
   {
     "id": "TC8",
     "ac": "AC8",
     "text": "Given two concurrent requests carrying different X-WatchGuard-* credentials, When their tool calls interleave, Then neither request ever reads the other's ContextVar-held credentials, and there is no module-level or global cache of tokens or account data",
     "type": "auto",
-    "tests": ["tests/test_middleware.py::test_concurrent_requests_do_not_share_context_var"]
+    "tests": ["tests/test_middleware.py::test_concurrent_requests_do_not_share_context_var"],
+    "result": "pass",
+    "evidence": "pytest -v: test_concurrent_requests_do_not_share_context_var PASSED. Four concurrent asyncio-gathered requests, each with distinct X-WatchGuard-Access-Id/X-WatchGuard-Account-Id pairs, are asserted to each read back only their own pair via the request-scoped ContextVar -- no cross-contamination across the 4 interleaved calls. Code review note: WatchguardClient is constructed fresh per tool invocation (client_factory() in server.py) and closed via its own async context manager; nothing is cached at module scope anywhere in client.py/context.py."
   },
   {
     "id": "TC9",
@@ -69,6 +85,6 @@
     ],
     "expect": "Each call returns a 200-shaped tool result matching the documented WatchGuard response fields, not an error envelope",
     "result": "blocked",
-    "evidence": "No WatchGuard Cloud test/trial account is available to this pipeline; not a blocker for publishing to INT per SOP 'no test account is not a blocker' and mcp-track.md section 3 completion criteria. Listed in the dev report as 'needs a real vendor account'."
+    "evidence": "No WatchGuard Cloud test/trial account is available to this pipeline; not a blocker for publishing to INT per SOP 'no test account is not a blocker' and mcp-track.md section 3 completion criteria. Listed in the dev report as 'needs a real vendor account'. Additionally untested for the same reason: the token-claim-based own-account resolution (TC2's implementation note) and the exact vendor request/response field names used throughout client.py (accountId/name/licenseKey/etc. are the best-supported reading of the fetched API docs, not confirmed byte-for-byte)."
   }
 ]
