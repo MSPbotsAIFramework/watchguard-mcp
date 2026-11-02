@@ -41,7 +41,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     payload.update(fields)
                 return await client.activate_device(token, payload)
 
-        return await run_tool(body)
+        return await run_tool("watchguard_activate_device", body)
 
     @mcp.tool(annotations={"readOnlyHint": True})
     async def watchguard_list_recent_activations(account_id: str | None = None, limit: int = 50) -> str:
@@ -58,7 +58,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 _, token = await resolve_account(client, account_id)
                 return await client.list_recent_activations(token, limit=clamp_limit(limit))
 
-        return await run_tool(body)
+        return await run_tool("watchguard_list_recent_activations", body)
 
     @mcp.tool(annotations={"readOnlyHint": True})
     async def watchguard_get_activation_batch_status(batch_id: str, account_id: str | None = None) -> str:
@@ -75,4 +75,4 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 _, token = await resolve_account(client, account_id)
                 return await client.get_activation_batch_status(token, require_arg(batch_id, "batch_id"))
 
-        return await run_tool(body)
+        return await run_tool("watchguard_get_activation_batch_status", body)

@@ -17,8 +17,9 @@ from typing import Any
 
 import httpx
 
-from .context import WatchguardCredentials
+from .context import WatchguardCredentials, get_request_id
 from .errors import WatchguardError, status_to_code
+from .logging_utils import log_event
 
 CONNECT_TIMEOUT_S = 5.0
 READ_TIMEOUT_S = 30.0
@@ -175,9 +176,15 @@ class WatchguardClient:
         json_body: dict[str, Any] | None = None,
         form_body: dict[str, str] | None = None,
     ) -> httpx.Response:
+        # One `vendor_call` log line per attempt (method, path, status/outcome,
+        # latency -- never headers, since those carry the bearer token and API
+        # key). `request_id` ties these lines back to the `run_tool` call that
+        # triggered them (PRD-21249 review round 1 must-fix, SOP SS6).
+        request_id = get_request_id()
         deadline = time.monotonic() + TOTAL_BUDGET_S
         last_response: httpx.Response | None = None
         for attempt in range(1, MAX_ATTEMPTS + 1):
+            started = time.monotonic()
             try:
                 resp = await self._http.request(
                     method,
@@ -188,16 +195,43 @@ class WatchguardClient:
                     data=form_body,
                 )
             except httpx.TimeoutException as exc:
+                log_event(
+                    "vendor_call",
+                    request_id=request_id,
+                    method=method,
+                    path=path,
+                    attempt=attempt,
+                    status="timeout",
+                    latency_ms=round((time.monotonic() - started) * 1000, 1),
+                )
                 if attempt == MAX_ATTEMPTS or time.monotonic() >= deadline:
                     raise WatchguardError("upstream_error", f"WatchGuard request timed out: {exc}", retryable=True) from exc
                 await _backoff_sleep(min(BACKOFF_BASE_S * (2 ** (attempt - 1)), BACKOFF_CAP_S))
                 continue
             except httpx.HTTPError as exc:
+                log_event(
+                    "vendor_call",
+                    request_id=request_id,
+                    method=method,
+                    path=path,
+                    attempt=attempt,
+                    status="network_error",
+                    latency_ms=round((time.monotonic() - started) * 1000, 1),
+                )
                 if attempt == MAX_ATTEMPTS or time.monotonic() >= deadline:
                     raise WatchguardError("upstream_error", f"WatchGuard request failed: {exc}", retryable=True) from exc
                 await _backoff_sleep(min(BACKOFF_BASE_S * (2 ** (attempt - 1)), BACKOFF_CAP_S))
                 continue
 
+            log_event(
+                "vendor_call",
+                request_id=request_id,
+                method=method,
+                path=path,
+                attempt=attempt,
+                status_code=resp.status_code,
+                latency_ms=round((time.monotonic() - started) * 1000, 1),
+            )
             last_response = resp
             if resp.status_code not in _RETRY_STATUS:
                 return resp

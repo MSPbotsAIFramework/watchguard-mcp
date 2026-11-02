@@ -48,7 +48,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     payload.update(fields)
                 return await client.create_operator(token, payload)
 
-        return await run_tool(body)
+        return await run_tool("watchguard_create_operator", body)
 
     @mcp.tool(annotations={"idempotentHint": True})
     async def watchguard_update_operator(username: str, account_id: str | None = None, fields: dict[str, Any] | None = None) -> str:
@@ -73,7 +73,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     payload.update(fields)
                 return await client.update_operator(token, payload)
 
-        return await run_tool(body)
+        return await run_tool("watchguard_update_operator", body)
 
     @mcp.tool(annotations={"destructiveHint": True})
     async def watchguard_delete_operator(username: str, account_id: str | None = None) -> str:
@@ -95,7 +95,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 }
                 return await client.delete_operator(token, payload)
 
-        return await run_tool(body)
+        return await run_tool("watchguard_delete_operator", body)
 
     @mcp.tool(annotations={"readOnlyHint": True})
     async def watchguard_list_operators_by_account(account_id: str | None = None, limit: int = 50) -> str:
@@ -112,7 +112,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 resolved_id, token = await resolve_account(client, account_id)
                 return await client.list_operators_by_account(token, require_account_id(resolved_id), limit=clamp_limit(limit))
 
-        return await run_tool(body)
+        return await run_tool("watchguard_list_operators_by_account", body)
 
     @mcp.tool(annotations={"readOnlyHint": True})
     async def watchguard_get_operator_transaction_status(transaction_id: str, account_id: str | None = None) -> str:
@@ -129,4 +129,4 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 _, token = await resolve_account(client, account_id)
                 return await client.get_operator_transaction_status(token, require_arg(transaction_id, "transaction_id"))
 
-        return await run_tool(body)
+        return await run_tool("watchguard_get_operator_transaction_status", body)

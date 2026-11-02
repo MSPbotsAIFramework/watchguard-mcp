@@ -27,7 +27,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 resolved_id, token = await resolve_account(client, account_id)
                 return await client.get_account(token, require_account_id(resolved_id))
 
-        return await run_tool(body)
+        return await run_tool("watchguard_get_account", body)
 
     @mcp.tool(annotations={"readOnlyHint": True})
     async def watchguard_list_child_accounts(
@@ -49,7 +49,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     token, require_account_id(resolved_id), limit=clamp_limit(limit), cursor=cursor
                 )
 
-        return await run_tool(body)
+        return await run_tool("watchguard_list_child_accounts", body)
 
     @mcp.tool()
     async def watchguard_create_account(
@@ -78,7 +78,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     payload.update(fields)
                 return await client.create_account(token, require_account_id(resolved_id), payload)
 
-        return await run_tool(body)
+        return await run_tool("watchguard_create_account", body)
 
     @mcp.tool(annotations={"idempotentHint": True})
     async def watchguard_update_account(account_id: str, fields: dict[str, Any]) -> str:
@@ -94,7 +94,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 _, token = await resolve_account(client, account_id)
                 return await client.update_account(token, require_arg(account_id, "account_id"), fields)
 
-        return await run_tool(body)
+        return await run_tool("watchguard_update_account", body)
 
     @mcp.tool(annotations={"destructiveHint": True})
     async def watchguard_delete_account(account_id: str) -> str:
@@ -109,4 +109,4 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                 _, token = await resolve_account(client, account_id)
                 return await client.delete_account(token, require_arg(account_id, "account_id"))
 
-        return await run_tool(body)
+        return await run_tool("watchguard_delete_account", body)

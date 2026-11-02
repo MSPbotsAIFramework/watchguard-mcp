@@ -9,11 +9,13 @@ uncaught exception (SOP SS4.1) and never over the response-size cap (SS2.5).
 from __future__ import annotations
 
 import json
+import time
 from typing import Any, Awaitable, Callable
 
 from ..client import WatchguardAccessToken, WatchguardClient
-from ..context import get_credentials
+from ..context import get_credentials, new_request_id, reset_request_id, set_request_id
 from ..errors import WatchguardError
+from ..logging_utils import log_event
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
@@ -72,9 +74,37 @@ def require_arg(value: str | None, name: str) -> str:
     raise WatchguardError("invalid_argument", f"'{name}' is required", retryable=False)
 
 
-async def run_tool(body: Callable[[], Awaitable[dict[str, Any]]]) -> str:
+async def run_tool(tool_name: str, body: Callable[[], Awaitable[dict[str, Any]]]) -> str:
+    """Run one tool's body, logging a single structured `tool_call` line
+
+    (request id, tool name, status, latency, and the mapped error code on
+    failure -- never credentials or the result payload itself; PRD-21249
+    review round 1 must-fix, SOP SS6). The request id is also published via
+    `context.set_request_id` so `WatchguardClient._send_raw` can tag its own
+    `vendor_call` log lines with it for the duration of this call.
+    """
+    request_id = new_request_id()
+    token = set_request_id(request_id)
+    started = time.monotonic()
     try:
         result = await body()
     except WatchguardError as exc:
+        log_event(
+            "tool_call",
+            request_id=request_id,
+            tool=tool_name,
+            status="error",
+            error_code=exc.code,
+            latency_ms=round((time.monotonic() - started) * 1000, 1),
+        )
         return exc.to_envelope()
+    finally:
+        reset_request_id(token)
+    log_event(
+        "tool_call",
+        request_id=request_id,
+        tool=tool_name,
+        status="ok",
+        latency_ms=round((time.monotonic() - started) * 1000, 1),
+    )
     return to_json(result)

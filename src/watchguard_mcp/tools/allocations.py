@@ -33,7 +33,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     token, require_account_id(resolved_id), require_arg(resource_type, "resource_type")
                 )
 
-        return await run_tool(body)
+        return await run_tool("watchguard_get_allocation_summary", body)
 
     @mcp.tool(annotations={"readOnlyHint": True})
     async def watchguard_list_allocations(resource_type: str, account_id: str | None = None, limit: int = 50) -> str:
@@ -56,7 +56,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     limit=clamp_limit(limit),
                 )
 
-        return await run_tool(body)
+        return await run_tool("watchguard_list_allocations", body)
 
     @mcp.tool(annotations={"readOnlyHint": True})
     async def watchguard_list_account_licenses(resource_type: str, account_id: str | None = None, limit: int = 50) -> str:
@@ -79,7 +79,7 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     limit=clamp_limit(limit),
                 )
 
-        return await run_tool(body)
+        return await run_tool("watchguard_list_account_licenses", body)
 
     @mcp.tool(annotations={"readOnlyHint": True})
     async def watchguard_list_assigned_assets(resource_type: str, account_id: str | None = None, limit: int = 50) -> str:
@@ -102,4 +102,4 @@ def register(mcp: FastMCP, client_factory: ClientFactory) -> None:
                     limit=clamp_limit(limit),
                 )
 
-        return await run_tool(body)
+        return await run_tool("watchguard_list_assigned_assets", body)
